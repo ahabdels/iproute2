@@ -145,6 +145,92 @@ static int read_seg6mode_type(const char *mode)
 	return -1;
 }
 
+static const char *seg6_flavor_names[SEG6_LOCAL_FLV_MAX + 1] = {
+	[SEG6_LOCAL_FLV_PSP]	= "PSP",
+	[SEG6_LOCAL_FLV_USP]	= "USP",
+	[SEG6_LOCAL_FLV_USD]	= "USD",
+};
+
+static int read_seg6_local_flv_type(const char *name)
+{
+	int i;
+
+	for (i = 0; i < SEG6_LOCAL_FLV_MAX + 1; ++i) {
+		if (!seg6_flavor_names[i])
+			continue;
+
+		if (strcmp(seg6_flavor_names[i], name) == 0)
+			return i;
+	}
+
+	return -1;
+}
+
+#define SEG6_LOCAL_FLV_BUF_SIZE 16
+static int parse_seg6local_flavors(const char *buf, __u8 *flv_mask)
+{
+	unsigned char flavor_ok[SEG6_LOCAL_FLV_MAX + 1] = { 0, };
+	char wbuf[SEG6_LOCAL_FLV_BUF_SIZE];
+	__u8 mask = 0;
+	int index;
+	char *s;
+
+	/* strtok changes first parameter, so we need to make a local copy */
+	memcpy(wbuf, buf, sizeof(wbuf[0]) * SEG6_LOCAL_FLV_BUF_SIZE);
+	wbuf[SEG6_LOCAL_FLV_BUF_SIZE - 1] = 0;
+
+	if (strlen(wbuf) == 0)
+		return -1;
+
+	for (s = strtok((char *) wbuf, ","); s; s = strtok(NULL, ",")) {
+		index = read_seg6_local_flv_type(s);
+
+		if (index < 0 || index > SEG6_LOCAL_FLV_MAX)
+			return -1;
+		/* we check for duplicates */
+		if (flavor_ok[index]++)
+			return -1;
+
+		mask |= (1 << index);
+	}
+
+	*flv_mask = mask;
+	return 0;
+}
+
+static void print_flavors(FILE *fp, __u8 flavors)
+{
+	int i, fnumber = 0;
+	char *flv_name;
+
+	if (is_json_context())
+		open_json_array(PRINT_JSON, "flavors");
+	else
+		fprintf(fp, "flavors ");
+
+	for (i = 0; i < SEG6_LOCAL_FLV_MAX + 1; ++i) {
+		if (flavors & (1 << i)) {
+			flv_name = (char *) seg6_flavor_names[i];
+			if (!flv_name)
+				continue;
+
+			if (is_json_context())
+				print_string(PRINT_JSON, NULL, NULL, flv_name);
+			else {
+				if (fnumber++ == 0)
+					fprintf(fp, "%s", flv_name);
+				else
+					fprintf(fp, ",%s", flv_name);
+			}
+		}
+	}
+
+	if (is_json_context())
+		close_json_array(PRINT_JSON, NULL);
+	else
+		fprintf(fp, " ");
+}
+
 static void print_encap_seg6(FILE *fp, struct rtattr *encap)
 {
 	struct rtattr *tb[SEG6_IPTUNNEL_MAX+1];
@@ -275,6 +361,13 @@ static void print_encap_seg6local(FILE *fp, struct rtattr *encap)
 
 	if (tb[SEG6_LOCAL_BPF])
 		print_encap_bpf_prog(fp, tb[SEG6_LOCAL_BPF], "endpoint");
+
+	if (tb[SEG6_LOCAL_FLV]) {
+		__u8 flavors = rta_getattr_u8(tb[SEG6_LOCAL_FLV]);
+
+		print_flavors(fp, flavors);
+	}
+
 }
 
 static void print_encap_mpls(FILE *fp, struct rtattr *encap)
@@ -634,9 +727,11 @@ static int parse_encap_seg6local(struct rtattr *rta, size_t len, int *argcp,
 	__u32 action = 0, table, iif, oif;
 	struct ipv6_sr_hdr *srh;
 	char **argv = *argvp;
+	int flavors_ok = 0;
 	int argc = *argcp;
 	char segbuf[1024];
 	inet_prefix addr;
+	__u8 flavors = 0;
 	__u32 hmac = 0;
 	int ret = 0;
 
@@ -686,6 +781,14 @@ static int parse_encap_seg6local(struct rtattr *rta, size_t len, int *argcp,
 			if (!oif)
 				exit(nodev(*argv));
 			ret = rta_addattr32(rta, len, SEG6_LOCAL_OIF, oif);
+		} else if (strcmp(*argv, "flavors") == 0) {
+			NEXT_ARG();
+			if (flavors_ok++)
+				duparg2("flavors", *argv);
+			if (parse_seg6local_flavors(*argv, &flavors))
+				invarg("invalid \"flavors\" attribute\n",
+					*argv);
+			ret = rta_addattr8(rta, len, SEG6_LOCAL_FLV, flavors);
 		} else if (strcmp(*argv, "srh") == 0) {
 			NEXT_ARG();
 			if (srh_ok++)

@@ -11,6 +11,15 @@
  *      2 of the License, or (at your option) any later version.
  */
 
+/*
+ * Changes:
+ *
+ * Andrea Mayer <andrea.mayer@uniroma2.it>
+ * Paolo Lungaroni <paolo.lungaroni@cnit.it>
+ *      add full support for flavors in End* behaviors.
+ *
+ */
+
 #ifndef _LINUX_SEG6_LOCAL_H
 #define _LINUX_SEG6_LOCAL_H
 
@@ -26,6 +35,7 @@ enum {
 	SEG6_LOCAL_IIF,
 	SEG6_LOCAL_OIF,
 	SEG6_LOCAL_BPF,
+	SEG6_LOCAL_FLV,
 	__SEG6_LOCAL_MAX,
 };
 #define SEG6_LOCAL_MAX (__SEG6_LOCAL_MAX - 1)
@@ -76,5 +86,18 @@ enum {
 };
 
 #define SEG6_LOCAL_BPF_PROG_MAX (__SEG6_LOCAL_BPF_PROG_MAX - 1)
+
+enum {
+	/* PSP: Penultimate Segment Pop of the SRH */
+	SEG6_LOCAL_FLV_PSP	= 0,
+	/* USP: Ultimate Segment Pop of the SRH */
+	SEG6_LOCAL_FLV_USP	= 1,
+	/* USD: Ultimate Segment Decapsulation */
+	SEG6_LOCAL_FLV_USD	= 2,
+
+	__SEG6_LOCAL_FLV_MAX,
+};
+
+#define SEG6_LOCAL_FLV_MAX (__SEG6_LOCAL_FLV_MAX - 1)
 
 #endif
